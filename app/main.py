@@ -1,16 +1,15 @@
 from datetime import timedelta
-from typing import Annotated
 
 import firebase_admin
 import uvicorn
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from firebase_admin import credentials, auth
 from firebase_admin._auth_utils import InvalidIdTokenError
 from fastapi import FastAPI, HTTPException, Depends
 from jose import jwt, JWTError
 from starlette import status
-from starlette.responses import Response
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import Response, RedirectResponse
 
 from app.core import BASE_DIR, Settings
 from app.schemas import RequestToken, Token
@@ -24,6 +23,15 @@ except ValueError:
 
 app = FastAPI()
 settings = Settings()
+
+# Allow CORS from any domain
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/token", response_model=Token)
