@@ -6,7 +6,7 @@ import uvicorn
 from firebase_admin import credentials, auth
 from firebase_admin._auth_utils import InvalidIdTokenError
 from fastapi import FastAPI, HTTPException
-from jose import jwt, JWTError
+from jose import jwt, JWTError, ExpiredSignatureError
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
@@ -105,10 +105,28 @@ async def validate_access_token(access_token: str):
 
 
 @app.get("/user")
-async def get_user(access_token: str):
-    payload = jwt.decode(access_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+async def get_user(access_token: str | None = None, firebase_id: str | None = None):
+    if firebase_id is None and access_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Identifier not provided",
+        )
+    if firebase_id is None:
+        try:
+            payload = jwt.decode(access_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        except ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Expired token",
+            )
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid token",
+            )
+        firebase_id = payload.get("id")
 
-    user = await User.objects.filter(firebase_id=payload.get("id")).first()
+    user = await User.objects.filter(firebase_id=firebase_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
