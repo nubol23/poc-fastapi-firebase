@@ -5,13 +5,15 @@ import uvicorn
 
 from firebase_admin import credentials, auth
 from firebase_admin._auth_utils import InvalidIdTokenError
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from jose import jwt, JWTError
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import Response, RedirectResponse
+from starlette.responses import Response
 
 from app.core import BASE_DIR, Settings
+from app.database import User, init_database
+from app.database.models import Role
 from app.schemas import RequestToken, Token
 from app.utils.auth import create_access_token
 
@@ -34,14 +36,30 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    await init_database()
+
+
 @app.post("/token", response_model=Token)
-def get_access_token(request_token: RequestToken):
+async def get_access_token(request_token: RequestToken):
     try:
         decoded_token = auth.verify_id_token(request_token.id_token)
 
+        # Create user if not exists
+        user = await User.objects.filter(firebase_id=decoded_token["user_id"]).first()
+        if not user:
+            user = await User.objects.create(
+                firebase_id=decoded_token["user_id"], role=Role.MEMBER
+            )
+
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"id": decoded_token["user_id"]}, expires_delta=access_token_expires
+            data={
+                "id": decoded_token["user_id"],
+                "role": user.role.name
+            },
+            expires_delta=access_token_expires,
         )
 
         return {"access_token": access_token, "token_type": "bearer"}
